@@ -11,16 +11,23 @@
 独占设备，必须先在宿主机确定分给本容器哪些卡，再写入 devcontainer.json 的
 runArgs，使随后的 docker create 只挂载这些卡。
 
+支持多个 devcontainer 配置：通过 --config 指定要写回的 devcontainer.json，
+不再硬编码固定路径；配合 --exclude-container-label 可在探测时排除「本次即将
+覆盖（重建）的旧容器」——旧容器在删除前仍挂载着旧卡，若不排除，这些本应归还
+的卡会被误判为「被占用」，导致 rebuild 时可用卡不足或卡号漂移。
+
 空闲判定（同时满足四条件）：
   1. 卡设备存在（/dev/davinci<N>）；
   2. npu-smi info 显示健康状态 OK；
   3. npu-smi info 显示该卡无计算进程（排除宿主机直接跑的进程）；
   4. 不被任何运行中容器挂载（docker inspect，权威来源——覆盖「挂载但空跑」
-     这种 npu-smi 和 fuser 都检测不到的情形）。
+     这种 npu-smi 和 fuser 都检测不到的情形），但排除 --exclude-container-label
+     命中的旧容器。
 
 用法：
-    python3 select_npu.py                 # 默认 1 张
-    NPU_REQUEST_COUNT=2 python3 select_npu.py
+    python3 select_npu.py                                          # 默认主配置，1 张卡
+    python3 select_npu.py --config .devcontainer/gpu/devcontainer.json
+    NPU_REQUEST_COUNT=2 python3 select_npu.py --exclude-container-label 'msopprof.devconfig=/x.json'
 
 行为：
     - stdout 只输出选中的卡号，逗号分隔（例如 "0,2"），供调用方直接使用。
@@ -29,6 +36,7 @@ runArgs，使随后的 docker create 只挂载这些卡。
       空闲卡不足 / 写回配置失败）。
 """
 
+import argparse
 import glob
 import json
 import os
@@ -40,18 +48,31 @@ import sys
 CARD_DEVICE_RE = re.compile(r"^--device=/dev/davinci(\d+)$")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), ".devcontainer", "devcontainer.json")
+DEFAULT_CONFIG_PATH = os.path.join(SCRIPT_DIR, "devcontainer.json")
 
 
-def docker_occupied_cards():
-    """返回被运行中容器挂载的 /dev/davinciN 卡号集合。
+def docker_occupied_cards(exclude_label=None):
+    """返回被运行中容器挂载的 /dev/davinciN 卡号集合（可排除指定 label 的容器）。
 
     /dev/davinciN 为独占设备，一旦被某个容器通过 docker create 挂载即被占用
     ——无论容器内是否有计算进程，npu-smi info（只反映计算进程）和 fuser（只
     反映打开 fd）都检测不到这种「挂载但空跑」的占用，只有 Docker 的挂载信息
     能精确反映。
+
+    exclude_label: `key=value` 形式的 docker label。命中的容器属于「本次即将
+    重建」的旧容器，其占用的卡应视为即将释放、可被复用，故从占用集合中排除。
     """
     occupied = set()
+    exclude_ids = set()
+    if exclude_label:
+        try:
+            exclude_ids = set(subprocess.run(
+                ["docker", "ps", "-q", "--filter", "label=" + exclude_label],
+                capture_output=True, text=True, timeout=15,
+            ).stdout.split())
+        except Exception as e:  # noqa: BLE001
+            print("docker ps (exclude label) failed: %s" % e, file=sys.stderr)
+
     try:
         ids = subprocess.run(
             ["docker", "ps", "-q"], capture_output=True, text=True, timeout=15,
@@ -61,6 +82,8 @@ def docker_occupied_cards():
         return occupied
 
     for cid in ids:
+        if cid in exclude_ids:
+            continue
         try:
             raw = subprocess.run(
                 ["docker", "inspect", cid],
@@ -77,7 +100,7 @@ def docker_occupied_cards():
     return occupied
 
 
-def detect_free_cards(count):
+def detect_free_cards(count, exclude_label=None):
     """返回按卡号升序的空闲卡列表，最多 count 张。"""
     # 从 /dev/davinci<N> 枚举宿主机真实存在的卡，不做固定数量假设。
     cards = set()
@@ -115,7 +138,7 @@ def detect_free_cards(count):
     }
 
     # 被运行中容器挂载的卡排除——最关键的一层，覆盖「挂载但无进程」。
-    occupied = docker_occupied_cards()
+    occupied = docker_occupied_cards(exclude_label)
 
     free = [
         c for c in cards
@@ -159,9 +182,9 @@ def find_runargs_block(text):
     raise ValueError("runArgs 数组未闭合")
 
 
-def apply_runargs(cards):
-    """把 cards 写回 devcontainer.json 的 runArgs，保留注释与格式。"""
-    with open(CONFIG_PATH, encoding="utf-8") as f:
+def apply_runargs(cards, config_path):
+    """把 cards 写回指定 devcontainer.json 的 runArgs，保留注释与格式。"""
+    with open(config_path, encoding="utf-8") as f:
         text = f.read()
 
     start, end = find_runargs_block(text)
@@ -180,13 +203,22 @@ def apply_runargs(cards):
 
     text = text[:start] + new_block + text[end:]
 
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    with open(config_path, "w", encoding="utf-8") as f:
         f.write(text)
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="分配空闲 NPU 卡并写回 devcontainer.json 的 runArgs。",
+    )
+    parser.add_argument("--config", default=DEFAULT_CONFIG_PATH,
+                        help="要写回的 devcontainer.json 路径（默认 .devcontainer/devcontainer.json）")
+    parser.add_argument("--exclude-container-label", default=None,
+                        help="docker label(key=value)；命中的容器在空闲卡检测时排除（用于覆盖旧容器）")
+    args = parser.parse_args()
+
     count = int(os.environ.get("NPU_REQUEST_COUNT", "1"))
-    chosen = detect_free_cards(count)
+    chosen = detect_free_cards(count, exclude_label=args.exclude_container_label)
 
     if len(chosen) < count:
         print(
@@ -197,7 +229,7 @@ def main():
         sys.exit(1)
 
     try:
-        apply_runargs(chosen)
+        apply_runargs(chosen, args.config)
     except Exception as e:  # noqa: BLE001 - 写回失败需上报并终止
         print("failed to update devcontainer.json: %s" % e, file=sys.stderr)
         sys.exit(1)
