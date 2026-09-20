@@ -17,7 +17,7 @@
 #
 # 验证目标：门禁 CI 执行环境 与 开发环境 devcontainer 的一致性。
 #
-# 原理：devcontainers/ci 会读取 .devcontainer/{cpu,npu}/devcontainer.json，
+# 原理：devcontainers/ci 会读取 .devcontainer/{cpu,a3}/devcontainer.json，
 # 在其 up 阶段自动执行 devcontainer.json 里声明的 postCreateCommand——这正是
 # 本仓库开发容器「首次创建时」运行的编译 + 测试脚本。因此只要这个 workflow
 # 能跑通，就说明同一套 devcontainer 配置在「本地 VS Code Dev Container」与
@@ -32,6 +32,16 @@
 name: Devcontainer CI Consistency
 
 on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+    branches:
+      - 'main'
+      - '*-dev'
+      - 'releases/v*'
   workflow_dispatch:
     inputs:
       target:
@@ -54,7 +64,7 @@ permissions:
 
 jobs:
   cpu:
-    if: ${{ inputs.target == 'cpu' || inputs.target == 'all' }}
+    if: ${{ github.event_name == 'pull_request' || inputs.target == 'cpu' || inputs.target == 'all' }}
     name: cpu-ut (devcontainer/cpu, nightly-main)
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -76,15 +86,12 @@ jobs:
         with:
           configFile: .devcontainer/cpu/devcontainer.json
           push: never
-          # GitHub runner 容器直连外网，无需 WSL2 宿主机 squid 代理兜底。
-          env: |
-            USE_HOST_PROXY=0
           runCmd: echo "devcontainer cpu postCreateCommand (cpu-ut) completed"
 
   npu:
-    if: ${{ inputs.target == 'npu' || inputs.target == 'all' }}
-    name: a3 two-card device tests (devcontainer/npu, nightly-main-a3)
-    runs-on: ${{ inputs.npu_runner }}
+    if: ${{ github.event_name == 'pull_request' || inputs.target == 'npu' || inputs.target == 'all' }}
+    name: a3 two-card device tests (devcontainer/a3, nightly-main-a3)
+    runs-on: ${{ github.event_name == 'pull_request' && 'linux-aarch64-a3-2' || inputs.npu_runner }}
     timeout-minutes: 240
     steps:
       - name: Check out repository
@@ -93,13 +100,18 @@ jobs:
       - name: Ensure host cache dir exists
         run: mkdir -p "${HOME}/.cache"
 
-      # 同上，up 阶段自动执行 .devcontainer/npu/devcontainer.json 的
+      # self-hosted runner 不自带 node/npm，而 devcontainers/ci 内部用
+      # `npm install -g @devcontainers/cli` 安装 CLI，缺 npm 会直接失败。
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 同上，up 阶段自动执行 .devcontainer/a3/devcontainer.json 的
       # postCreateCommand（= 门禁 a3-2 with-device 的编译 + 测试脚本）。
       - name: Build & run npu devcontainer (postCreateCommand = a3 device tests)
         uses: devcontainers/ci@v0.3
         with:
-          configFile: .devcontainer/npu/devcontainer.json
+          configFile: .devcontainer/a3/devcontainer.json
           push: never
-          env: |
-            USE_HOST_PROXY=0
           runCmd: echo "devcontainer npu postCreateCommand (a3 two-card) completed"

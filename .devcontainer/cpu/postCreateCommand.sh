@@ -20,19 +20,6 @@ set -euo pipefail
 PROJECT_DIR="/workspace/vllm-ascend"
 cd "${PROJECT_DIR}"
 
-# 网络兜底：本地 WSL2 容器直连外网被墙，需走宿主机 squid 代理 + 清华 pip 镜像。
-# GitHub runner 上的容器可直连外网，无需代理：传 USE_HOST_PROXY=0 关闭此兜底。
-if [ "${USE_HOST_PROXY:-1}" = "1" ]; then
-    if [ -z "${HTTP_PROXY:-}" ]; then
-        export HTTP_PROXY="http://host.docker.internal:3128"
-    fi
-    if [ -z "${HTTPS_PROXY:-}" ]; then
-        export HTTPS_PROXY="http://host.docker.internal:3128"
-    fi
-fi
-export http_proxy="${http_proxy:-${HTTP_PROXY:-}}"
-export https_proxy="${https_proxy:-${HTTPS_PROXY:-}}"
-
 echo "[1/6] 标记 git safe.directory"
 git config --global --add safe.directory "${PROJECT_DIR}"
 
@@ -55,7 +42,12 @@ echo "[4/6] 从门禁 pin 提交重装 vllm (门禁: 'Install vllm-project/vllm 
 VLLM_PIN="$(tr -d '[:space:]' < "${PROJECT_DIR}/.github/vllm-main-verified.commit")"
 VLLM_SRC="/vllm-workspace/vllm"
 git config --global --add safe.directory "${VLLM_SRC}"
-git -C "${VLLM_SRC}" fetch --depth 1 origin "${VLLM_PIN}"
+# amd64 镜像在构建时执行过 buildkite 脚本，往 /root/.gitconfig 写入了
+#   url."https://gh-proxy.test.osinfra.cn/https://github.com/".insteadOf "https://github.com/"
+# 会把任何 github.com URL 重写成内网代理 gh-proxy.test.osinfra.cn（GitHub runner
+# 直连不到，报 418）。fetch 前先移除该 url section，aarch64 镜像无此配置时忽略。
+git config --global --remove-section 'url.https://gh-proxy.test.osinfra.cn/https://github.com/' 2>/dev/null || true
+git -C "${VLLM_SRC}" fetch --depth 1 https://github.com/vllm-project/vllm.git "${VLLM_PIN}"
 git -C "${VLLM_SRC}" checkout -f FETCH_HEAD
 ( cd "${VLLM_SRC}" && VLLM_TARGET_DEVICE=empty uv pip install . --force-reinstall --no-deps --no-build-isolation )
 pip uninstall -y triton
