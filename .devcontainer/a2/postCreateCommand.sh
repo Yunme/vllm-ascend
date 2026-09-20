@@ -24,32 +24,45 @@ npu-smi info
 echo "[3/6] 激活 CANN 环境并安装开发依赖 (门禁: 'Install packages')"
 # shellcheck disable=SC1091
 . /usr/local/Ascend/ascend-toolkit/set_env.sh
-pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-pip install uv uc-manager
-export UV_SYSTEM_PYTHON=1
-export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-echo "[4/6] 从门禁 pin 提交重装 vllm (门禁: 'Install vllm-project/vllm from source')"
-# 与 cpu 脚本一致：把镜像内置的 /vllm-workspace/vllm（editable）切到 pin 提交并
-# 以 empty 设备重装，生成与门禁一致的 version 元数据，避免 v0.28.0 tag 的 API 差异。
-VLLM_PIN="$(tr -d '[:space:]' < "${PROJECT_DIR}/.github/vllm-main-verified.commit")"
-VLLM_SRC="/vllm-workspace/vllm"
-git config --global --add safe.directory "${VLLM_SRC}"
-git config --global --remove-section 'url.https://gh-proxy.test.osinfra.cn/https://github.com/' 2>/dev/null || true
-git -C "${VLLM_SRC}" fetch --depth 1 https://github.com/vllm-project/vllm.git "${VLLM_PIN}"
-git -C "${VLLM_SRC}" checkout -f FETCH_HEAD
-( cd "${VLLM_SRC}" && VLLM_TARGET_DEVICE=empty uv pip install . --force-reinstall --no-deps --no-build-isolation )
-pip uninstall -y triton
+local activator=".devcontainer/activate_npu.sh"
+if [ ! -f "$activator" ]; then
+    warn "NPU activator script not found: $activator"
+    return 0
+fi
+# 该脚本自身为降级语义：探测失败/无空闲卡时仅告警，退出码仍为 0。
+if NPU_REQUEST_COUNT="${NPU_REQUEST_COUNT:-1}" bash "$activator"; then
+    log "activate_npu.sh finished"
+else
+    warn "activate_npu.sh failed"
+fi
 
-echo "[5/6] 安装 triton-ascend 并带设备编译安装 vllm-ascend (门禁: 'Install ... with device')"
-cd "${PROJECT_DIR}"
-uv pip install -r requirements-dev.txt
-uv pip install --force-reinstall --no-deps triton-ascend==3.2.2
-export MAX_JOBS=23
-uv pip install -e . --no-build-isolation
+# pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+# pip install uv uc-manager
+# export UV_SYSTEM_PYTHON=1
+# export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
-echo "[6/6] 运行 A2 单卡测试 (门禁: 'Run selected tests with device', a2-1 分区)"
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-  .github/workflows/scripts/run_selected_tests.sh a2 1 with-device tests/e2e/pull_request/one_card
+# echo "[4/6] 从门禁 pin 提交重装 vllm (门禁: 'Install vllm-project/vllm from source')"
+# # 与 cpu 脚本一致：把镜像内置的 /vllm-workspace/vllm（editable）切到 pin 提交并
+# # 以 empty 设备重装，生成与门禁一致的 version 元数据，避免 v0.28.0 tag 的 API 差异。
+# VLLM_PIN="$(tr -d '[:space:]' < "${PROJECT_DIR}/.github/vllm-main-verified.commit")"
+# VLLM_SRC="/vllm-workspace/vllm"
+# git config --global --add safe.directory "${VLLM_SRC}"
+# git config --global --remove-section 'url.https://gh-proxy.test.osinfra.cn/https://github.com/' 2>/dev/null || true
+# git -C "${VLLM_SRC}" fetch --depth 1 https://github.com/vllm-project/vllm.git "${VLLM_PIN}"
+# git -C "${VLLM_SRC}" checkout -f FETCH_HEAD
+# ( cd "${VLLM_SRC}" && VLLM_TARGET_DEVICE=empty uv pip install . --force-reinstall --no-deps --no-build-isolation )
+# pip uninstall -y triton
 
-echo "门禁 NPU(A2) 阶段复现完成"
+# echo "[5/6] 安装 triton-ascend 并带设备编译安装 vllm-ascend (门禁: 'Install ... with device')"
+# cd "${PROJECT_DIR}"
+# uv pip install -r requirements-dev.txt
+# uv pip install --force-reinstall --no-deps triton-ascend==3.2.2
+# export MAX_JOBS=23
+# uv pip install -e . --no-build-isolation
+
+# echo "[6/6] 运行 A2 单卡测试 (门禁: 'Run selected tests with device', a2-1 分区)"
+# VLLM_WORKER_MULTIPROC_METHOD=spawn \
+#   .github/workflows/scripts/run_selected_tests.sh a2 1 with-device tests/e2e/pull_request/one_card
+
+# echo "门禁 NPU(A2) 阶段复现完成"
