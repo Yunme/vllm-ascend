@@ -20,10 +20,12 @@ npu-smi info
 echo "[3/6] 激活 CANN 环境并安装开发依赖"
 . /usr/local/Ascend/ascend-toolkit/set_env.sh
 
-pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+pip config set global.index-url https://repo.huaweicloud.com/repository/pypi/simple
+pip config set global.extra-index-url https://repo.huaweicloud.com/ascend/repos/pypi
 pip install uv uc-manager
 export UV_SYSTEM_PYTHON=1
-export UV_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+export UV_INDEX_URL=https://repo.huaweicloud.com/repository/pypi/simple
+export UV_EXTRA_INDEX_URL=https://repo.huaweicloud.com/ascend/repos/pypi
 uv pip install -r requirements-dev.txt
 
 echo "[4/6] 安装 triton-ascend (门禁: 'Install ... with device')"
