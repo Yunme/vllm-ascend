@@ -28,10 +28,10 @@ echo "[2/6] 激活 CANN 环境（all-in-one 镜像需 devlib 路径才能 import
 . /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 echo "[3/6] 安装 uv (门禁: 'Install packages')"
-pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 pip install uv uc-manager
 export UV_SYSTEM_PYTHON=1
-export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+export UV_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 
 echo "[4/6] 从门禁 pin 提交重装 vllm (门禁: 'Install vllm-project/vllm from source')"
 # 门禁 cpu-ut 在 base 镜像里 checkout .github/vllm-main-verified.commit 指向的 main 提交，

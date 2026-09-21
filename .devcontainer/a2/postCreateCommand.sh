@@ -25,10 +25,10 @@ echo "[3/6] 激活 CANN 环境并安装开发依赖 (门禁: 'Install packages')
 # shellcheck disable=SC1091
 . /usr/local/Ascend/ascend-toolkit/set_env.sh
 
-pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 pip install uv uc-manager
 export UV_SYSTEM_PYTHON=1
-export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+export UV_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 
 echo "[4/6] 从门禁 pin 提交重装 vllm (门禁: 'Install vllm-project/vllm from source')"
 # 与 cpu 脚本一致：把镜像内置的 /vllm-workspace/vllm（editable）切到 pin 提交并
