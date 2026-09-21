@@ -146,6 +146,7 @@ def detect_free_cards(count, exclude_label=None):
         and c not in busy_by_process
         and c not in occupied
     ]
+    print("all free NPU cards: %s" % free, file=sys.stderr)
     return free[:count]
 
 
