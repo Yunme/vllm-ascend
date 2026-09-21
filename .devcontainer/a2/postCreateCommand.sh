@@ -52,7 +52,8 @@ export MAX_JOBS=23
 uv pip install -e . --no-build-isolation
 
 echo "[6/6] 运行 A2 单卡测试 (门禁: 'Run selected tests with device', a2-1 分区)"
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
+# 与门禁一致用 ModelScope 下载模型，避免容器网络直连 huggingface.co 失败。
+VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
   .github/workflows/scripts/run_selected_tests.sh a2 1 with-device tests/e2e/pull_request/one_card
 
 echo "门禁 NPU(A2) 阶段复现完成"
