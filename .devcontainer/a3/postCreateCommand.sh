@@ -20,36 +20,21 @@ npu-smi info
 echo "[3/6] 激活 CANN 环境并安装开发依赖"
 . /usr/local/Ascend/ascend-toolkit/set_env.sh
 
+pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+pip install uv uc-manager
+export UV_SYSTEM_PYTHON=1
+export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+uv pip install -r requirements-dev.txt
 
-local activator=".devcontainer/activate_npu.sh"
-if [ ! -f "$activator" ]; then
-    warn "NPU activator script not found: $activator"
-    return 0
-fi
-# 该脚本自身为降级语义：探测失败/无空闲卡时仅告警，退出码仍为 0。
-if NPU_REQUEST_COUNT="${NPU_REQUEST_COUNT:-1}" bash "$activator"; then
-    log "activate_npu.sh finished"
-else
-    warn "activate_npu.sh failed"
-fi
+echo "[4/6] 安装 triton-ascend (门禁: 'Install ... with device')"
+uv pip install --force-reinstall --no-deps triton-ascend==3.2.2
 
-# pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-# pip install uv uc-manager
-# export UV_SYSTEM_PYTHON=1
-# export UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-# uv pip install -r requirements-dev.txt
+echo "[5/6] 带设备编译安装 vllm-ascend（编译 NPU 自定义内核）"
+export MAX_JOBS=46
+uv pip install -e .
 
-# echo "[4/6] 安装 triton-ascend (门禁: 'Install ... with device')"
-# uv pip install --force-reinstall --no-deps triton-ascend==3.2.2
+echo "[6/6] 运行 A3 双卡测试 (门禁: 'Run selected tests with device', a3-2 分区)"
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  .github/workflows/scripts/run_selected_tests.sh a3 2 with-device tests/e2e/pull_request/two_card
 
-# echo "[5/6] 带设备编译安装 vllm-ascend（编译 NPU 自定义内核）"
-# export MAX_JOBS=46
-# uv pip install -e .
-
-
-
-# echo "[6/6] 运行 A3 双卡测试 (门禁: 'Run selected tests with device', a3-2 分区)"
-# VLLM_WORKER_MULTIPROC_METHOD=spawn \
-#   .github/workflows/scripts/run_selected_tests.sh a3 2 with-device tests/e2e/pull_request/two_card
-
-# echo "门禁 NPU(A3) 阶段复现完成"
+echo "门禁 NPU(A3) 阶段复现完成"
