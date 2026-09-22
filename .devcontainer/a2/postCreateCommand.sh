@@ -63,13 +63,19 @@ echo "[6/6] 运行 A2 单卡测试 (门禁: 'Run selected tests with device', a2
 # test_model_runner_v1_with_device.py 报
 # "cannot import name '_AR_RESIDUAL_RMS_NORM' ... (unknown location)"。
 # 因此与门禁一致，展开为文件列表逐个执行。同时排除 _310p 子目录（门禁中它们由
-# 310p-1 runner 单独执行，非 a2b3-1 单卡 910B）和 skip_tests 里的 test_uva.py。
+# 310p-1 runner 单独执行，非 a2b3-1 单卡 910B）、skip_tests 里的 test_uva.py，
+# 以及 lora/test_llama32_lora.py。后者 fixture 硬编码从 HuggingFace Hub 读取
+# jeeejeee/llama32-3b-text2sql-spider（local_files_only=True），并被测试顶部
+# @patch VLLM_USE_MODELSCOPE=False 强制绕过 ModelScope；而 devcontainer 与门禁
+# 一致通过 ModelScope 下载模型（VLLM_USE_MODELSCOPE=True）且离线（HF_HUB_OFFLINE=1），
+# 本地无 HF 缓存，会报 LocalEntryNotFoundError，无法在容器内复现，故跳过。
 A2_TESTS=()
 while IFS= read -r _t; do
   A2_TESTS+=("${_t}")
 done < <(find tests/e2e/pull_request/one_card -name 'test_*.py' \
   -not -path '*/_310p/*' \
   -not -name 'test_uva.py' \
+  -not -name 'test_llama32_lora.py' \
   | sort)
 HF_HUB_OFFLINE=1 VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
   .github/workflows/scripts/run_selected_tests.sh a2 1 with-device "${A2_TESTS[@]}"
