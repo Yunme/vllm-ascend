@@ -41,7 +41,6 @@ echo "[4/6] 从门禁 pin 提交重装 vllm (门禁: 'Install vllm-project/vllm 
 VLLM_PIN="$(tr -d '[:space:]' < "${PROJECT_DIR}/.github/vllm-main-verified.commit")"
 VLLM_SRC="/vllm-workspace/vllm"
 git config --global --add safe.directory "${VLLM_SRC}"
-git config --global --remove-section 'url.https://gh-proxy.test.osinfra.cn/https://github.com/' 2>/dev/null || true
 git -C "${VLLM_SRC}" fetch --depth 1 https://github.com/vllm-project/vllm.git "${VLLM_PIN}"
 git -C "${VLLM_SRC}" checkout -f FETCH_HEAD
 ( cd "${VLLM_SRC}" && VLLM_TARGET_DEVICE=empty uv pip install . --force-reinstall --no-build-isolation )
