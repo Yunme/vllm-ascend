@@ -53,7 +53,28 @@ uv pip install --force-reinstall --no-deps triton-ascend==3.2.2
 export MAX_JOBS=23
 uv pip install -e . --no-build-isolation
 
-echo "[6/6] 运行 A2 单卡测试 (门禁: 'Run selected tests with device', a2-1 分区)"
+echo "[6/6] 预下载 A2 分区模型并运行单卡测试 (门禁: 'Run selected tests with device', a2-1 分区)"
+# 门禁在跑测试前会由 labeled_download_model_dataset.yaml（[model-dataset-download] label）
+# 把 model_dataset_list.json 里 a2 分区的模型预下载到 /root/.cache/modelscope，测试阶段再
+# 以 HF_HUB_OFFLINE=1 + VLLM_USE_MODELSCOPE=True 离线读取。devcontainer 的 /root/.cache
+# 挂载宿主机缓存，但可能尚未包含本次测试需要的模型（例如 test_lora_with_spec_decode.py 的
+# Qwen/Qwen3-1.7B、vllm-ascend/Qwen3-1.7B_eagle3、vllm-ascend/qwen-linear-algebra-coder），
+# 离线 snapshot_download 会报 "Cannot find the requested files in the cached path"。
+# 这里与门禁一致，先按 a2 分区列表补齐缺失模型（modelscope 对已缓存模型只校验、不重复下载）。
+python3 - "${PROJECT_DIR}/.github/workflows/misc/model_dataset_list.json" a2 <<'PY'
+import json
+import sys
+
+from modelscope import snapshot_download
+
+list_path, cluster = sys.argv[1], sys.argv[2]
+with open(list_path) as f:
+    data = json.load(f)
+for model in data.get("models", {}).get(cluster, []):
+    print(f"Downloading {model}")
+    snapshot_download(model_id=model)
+PY
+
 # 门禁 select_tests.py 会把 one_card 目录展开为逐个 test_*.py 文件，再由
 # run_selected_tests.sh 每个文件单独 pytest（独立进程）。若直接把目录整体传给
 # pytest，单进程会按字母序收集整个目录：test_minimax_m3_sparse_attn.py 先于
