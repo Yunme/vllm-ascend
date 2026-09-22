@@ -33,15 +33,18 @@ export UV_INDEX_URL=https://repo.huaweicloud.com/repository/pypi/simple
 export UV_EXTRA_INDEX_URL=https://repo.huaweicloud.com/ascend/repos/pypi
 
 echo "[4/6] 从门禁 pin 提交重装 vllm (门禁: 'Install vllm-project/vllm from source')"
-# 与 cpu 脚本一致：把镜像内置的 /vllm-workspace/vllm（editable）切到 pin 提交并
-# 以 empty 设备重装，生成与门禁一致的 version 元数据，避免 v0.28.0 tag 的 API 差异。
+# 门禁 _selected_tests.yaml 里的命令是 `VLLM_TARGET_DEVICE=empty uv pip install .`
+# （没有 --no-deps，会按 pin 解析并安装 vllm 依赖）。镜像内置 vllm 是 v0.28.0 tag，
+# 需要先切到 pin 并覆盖重装；这里保留 --force-reinstall 覆盖镜像内置 vllm，
+# 去掉 --no-deps 让依赖与门禁一致（VLLM_TARGET_DEVICE=empty 只装 common.txt，
+# 不含 flashinfer，flashinfer 仅在 cuda/rocm 设备下才装）。
 VLLM_PIN="$(tr -d '[:space:]' < "${PROJECT_DIR}/.github/vllm-main-verified.commit")"
 VLLM_SRC="/vllm-workspace/vllm"
 git config --global --add safe.directory "${VLLM_SRC}"
 git config --global --remove-section 'url.https://gh-proxy.test.osinfra.cn/https://github.com/' 2>/dev/null || true
 git -C "${VLLM_SRC}" fetch --depth 1 https://github.com/vllm-project/vllm.git "${VLLM_PIN}"
 git -C "${VLLM_SRC}" checkout -f FETCH_HEAD
-( cd "${VLLM_SRC}" && VLLM_TARGET_DEVICE=empty uv pip install . --force-reinstall --no-deps --no-build-isolation )
+( cd "${VLLM_SRC}" && VLLM_TARGET_DEVICE=empty uv pip install . --force-reinstall --no-build-isolation )
 pip uninstall -y triton
 
 echo "[5/6] 安装 triton-ascend 并带设备编译安装 vllm-ascend (门禁: 'Install ... with device')"
