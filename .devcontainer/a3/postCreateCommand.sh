@@ -54,8 +54,22 @@ export MAX_JOBS=46
 uv pip install -e .
 
 echo "[6/6] 运行 A3 双卡测试 (门禁: 'Run selected tests with device', a3-2 分区)"
-# 与门禁一致用 ModelScope 下载模型，避免容器网络直连 huggingface.co 失败。
+# 门禁 select_tests.py 会把 two_card 目录展开为逐个 test_*.py 文件，再由
+# run_selected_tests.sh 每个文件单独 pytest（独立进程），同时剔除 skip_tests 中的
+# 文件。若直接把目录整体传给 pytest，单进程会按字母序收集整个目录，各文件的顶层
+# import 会互相污染（与 one_card 的 minimax_m3_vl 注入假模块同类问题）。因此与
+# 门禁一致，展开为文件列表、剔除 skip_tests 后逐个执行。
+# skip_tests 中 two_card 相关：test_qwen3_performance.py、lora/test_llama32_lora_tp2.py、
+# aclgraph/test_aclgraph_capture_replay.py。
+A3_TESTS=()
+while IFS= read -r _t; do
+  A3_TESTS+=("${_t}")
+done < <(find tests/e2e/pull_request/two_card -name 'test_*.py' \
+  -not -name 'test_qwen3_performance.py' \
+  -not -name 'test_llama32_lora_tp2.py' \
+  -not -name 'test_aclgraph_capture_replay.py' \
+  | sort)
 VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
-  .github/workflows/scripts/run_selected_tests.sh a3 2 with-device tests/e2e/pull_request/two_card
+  .github/workflows/scripts/run_selected_tests.sh a3 2 with-device "${A3_TESTS[@]}"
 
 echo "门禁 NPU(A3) 阶段复现完成"

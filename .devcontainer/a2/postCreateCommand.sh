@@ -54,8 +54,24 @@ export MAX_JOBS=23
 uv pip install -e . --no-build-isolation
 
 echo "[6/6] 运行 A2 单卡测试 (门禁: 'Run selected tests with device', a2-1 分区)"
-# 与门禁一致用 ModelScope 下载模型，避免容器网络直连 huggingface.co 失败。
+# 门禁 select_tests.py 会把 one_card 目录展开为逐个 test_*.py 文件，再由
+# run_selected_tests.sh 每个文件单独 pytest（独立进程）。若直接把目录整体传给
+# pytest，单进程会按字母序收集整个目录：test_minimax_m3_sparse_attn.py 先于
+# test_model_runner_v1_with_device.py 被收集，其 import vllm_ascend.models.minimax_m3
+# 会触发 minimax_m3_vl.py 顶层注入一个缺少 _AR_RESIDUAL_RMS_NORM 的假模块
+# (vllm.model_executor.layers.fused_allreduce_gemma_rms_norm)，污染后续收集，导致
+# test_model_runner_v1_with_device.py 报
+# "cannot import name '_AR_RESIDUAL_RMS_NORM' ... (unknown location)"。
+# 因此与门禁一致，展开为文件列表逐个执行。同时排除 _310p 子目录（门禁中它们由
+# 310p-1 runner 单独执行，非 a2b3-1 单卡 910B）和 skip_tests 里的 test_uva.py。
+A2_TESTS=()
+while IFS= read -r _t; do
+  A2_TESTS+=("${_t}")
+done < <(find tests/e2e/pull_request/one_card -name 'test_*.py' \
+  -not -path '*/_310p/*' \
+  -not -name 'test_uva.py' \
+  | sort)
 VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
-  .github/workflows/scripts/run_selected_tests.sh a2 1 with-device tests/e2e/pull_request/one_card
+  .github/workflows/scripts/run_selected_tests.sh a2 1 with-device "${A2_TESTS[@]}"
 
 echo "门禁 NPU(A2) 阶段复现完成"
