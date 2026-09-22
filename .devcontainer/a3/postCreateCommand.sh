@@ -69,7 +69,7 @@ done < <(find tests/e2e/pull_request/two_card -name 'test_*.py' \
   -not -name 'test_llama32_lora_tp2.py' \
   -not -name 'test_aclgraph_capture_replay.py' \
   | sort)
-VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
+HF_HUB_OFFLINE=1 VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
   .github/workflows/scripts/run_selected_tests.sh a3 2 with-device "${A3_TESTS[@]}"
 
 echo "门禁 NPU(A3) 阶段复现完成"

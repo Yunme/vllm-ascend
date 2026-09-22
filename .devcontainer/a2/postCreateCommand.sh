@@ -71,7 +71,7 @@ done < <(find tests/e2e/pull_request/one_card -name 'test_*.py' \
   -not -path '*/_310p/*' \
   -not -name 'test_uva.py' \
   | sort)
-VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
+HF_HUB_OFFLINE=1 VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
   .github/workflows/scripts/run_selected_tests.sh a2 1 with-device "${A2_TESTS[@]}"
 
 echo "门禁 NPU(A2) 阶段复现完成"
