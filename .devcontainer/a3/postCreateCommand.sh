@@ -75,6 +75,10 @@ files = [
     if f.name
     not in {"test_qwen3_performance.py", "test_llama32_lora_tp2.py", "test_aclgraph_capture_replay.py"}
 ]
+# conftest.py 里定义的 session fixture（如 lora 的 *_files、test_vlm 的 vl_config）引用
+# 的 repo 不出现在 test_*.py 里，必须一并扫描，否则会漏下载。
+files.append(pathlib.Path("tests/e2e/conftest.py"))
+files += list(pathlib.Path("tests/e2e/pull_request/two_card").rglob("conftest.py"))
 pat = re.compile(r'["\']([A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+?)["\']')
 models = {
     m
