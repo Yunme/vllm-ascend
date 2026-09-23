@@ -59,19 +59,35 @@ echo "[6/6] 预下载 A3 分区模型并运行双卡测试 (门禁: 'Run selecte
 # 以 HF_HUB_OFFLINE=1 + VLLM_USE_MODELSCOPE=True 离线读取。devcontainer 的 /root/.cache
 # 挂载宿主机缓存，但可能尚未包含本次测试需要的模型，离线 snapshot_download 会报
 # "Cannot find the requested files in the cached path"。
-# 这里与门禁一致，先按 a3 分区列表补齐缺失模型（modelscope 对已缓存模型只校验、不重复下载）。
-python3 - "${PROJECT_DIR}/.github/workflows/misc/model_dataset_list.json" a3 <<'PY'
-import json
+# 这里只下载当前选中测试实际引用的 org/repo，而非 model_dataset_list.json 的全量列表：列表含
+# 200+ 模型，既有 ModelScope 上不存在的条目（会 404 中断整个脚本），也含超大模型。对已缓存
+# 模型只校验，对无法下载的条目跳过、不中断。
+python3 - <<'PY'
+import pathlib
+import re
 import sys
 
 from modelscope import snapshot_download
 
-list_path, cluster = sys.argv[1], sys.argv[2]
-with open(list_path) as f:
-    data = json.load(f)
-for model in data.get("models", {}).get(cluster, []):
+files = [
+    f
+    for f in pathlib.Path("tests/e2e/pull_request/two_card").rglob("test_*.py")
+    if f.name
+    not in {"test_qwen3_performance.py", "test_llama32_lora_tp2.py", "test_aclgraph_capture_replay.py"}
+]
+pat = re.compile(r'["\']([A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+?)["\']')
+models = {
+    m
+    for f in files
+    for m in pat.findall(f.read_text(errors="ignore"))
+    if m.count("/") == 1 and " " not in m
+}
+for model in sorted(models):
     print(f"Downloading {model}")
-    snapshot_download(model_id=model)
+    try:
+        snapshot_download(model_id=model)
+    except Exception as exc:
+        print(f"WARN: skip {model}: {exc}", file=sys.stderr)
 PY
 
 # 门禁 select_tests.py 会把 two_card 目录展开为逐个 test_*.py 文件，再由

@@ -60,19 +60,36 @@ echo "[6/6] 预下载 A2 分区模型并运行单卡测试 (门禁: 'Run selecte
 # 挂载宿主机缓存，但可能尚未包含本次测试需要的模型（例如 test_lora_with_spec_decode.py 的
 # Qwen/Qwen3-1.7B、vllm-ascend/Qwen3-1.7B_eagle3、vllm-ascend/qwen-linear-algebra-coder），
 # 离线 snapshot_download 会报 "Cannot find the requested files in the cached path"。
-# 这里与门禁一致，先按 a2 分区列表补齐缺失模型（modelscope 对已缓存模型只校验、不重复下载）。
-python3 - "${PROJECT_DIR}/.github/workflows/misc/model_dataset_list.json" a2 <<'PY'
-import json
+# 这里只下载当前选中测试实际引用的 org/repo，而非 model_dataset_list.json 的全量列表：列表含
+# 300+ 模型，既有 ModelScope 上不存在的条目（如 ByteDance-Seed/BAGEL-7B-MoT 会 404 中断
+# 整个脚本），也含 70B/235B/397B 等超大模型，全量下载不现实。对已缓存模型只校验，对无法
+# 下载的条目跳过、不中断。
+python3 - <<'PY'
+import pathlib
+import re
 import sys
 
 from modelscope import snapshot_download
 
-list_path, cluster = sys.argv[1], sys.argv[2]
-with open(list_path) as f:
-    data = json.load(f)
-for model in data.get("models", {}).get(cluster, []):
+files = [
+    f
+    for f in pathlib.Path("tests/e2e/pull_request/one_card").rglob("test_*.py")
+    if "_310p" not in str(f)
+    and f.name not in {"test_uva.py", "test_llama32_lora.py"}
+]
+pat = re.compile(r'["\']([A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+?)["\']')
+models = {
+    m
+    for f in files
+    for m in pat.findall(f.read_text(errors="ignore"))
+    if m.count("/") == 1 and " " not in m
+}
+for model in sorted(models):
     print(f"Downloading {model}")
-    snapshot_download(model_id=model)
+    try:
+        snapshot_download(model_id=model)
+    except Exception as exc:
+        print(f"WARN: skip {model}: {exc}", file=sys.stderr)
 PY
 
 # 门禁 select_tests.py 会把 one_card 目录展开为逐个 test_*.py 文件，再由
