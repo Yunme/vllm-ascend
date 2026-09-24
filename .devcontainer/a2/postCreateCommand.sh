@@ -75,7 +75,13 @@ files = [
     f
     for f in pathlib.Path("tests/e2e/pull_request/one_card").rglob("test_*.py")
     if "_310p" not in str(f)
-    and f.name not in {"test_uva.py", "test_llama32_lora.py"}
+    and f.name
+    not in {
+        "test_uva.py",
+        "test_llama32_lora.py",
+        "test_qwen3_multi_loras.py",
+        "test_qwen3_5_0_8b.py",
+    }
 ]
 # conftest.py 里定义的 session fixture（如 lora 的 *_files、test_vlm 的 vl_config）引用
 # 的 repo 不出现在 test_*.py 里，必须一并扫描，否则会漏下载（曾导致 test_ilama_lora 失败）。
@@ -106,11 +112,13 @@ PY
 # "cannot import name '_AR_RESIDUAL_RMS_NORM' ... (unknown location)"。
 # 因此与门禁一致，展开为文件列表逐个执行。同时排除 _310p 子目录（门禁中它们由
 # 310p-1 runner 单独执行，非 a2b3-1 单卡 910B）、skip_tests 里的 test_uva.py，
-# 以及 lora/test_llama32_lora.py。后者 fixture 硬编码从 HuggingFace Hub 读取
-# jeeejeee/llama32-3b-text2sql-spider（local_files_only=True），并被测试顶部
-# @patch VLLM_USE_MODELSCOPE=False 强制绕过 ModelScope；而 devcontainer 与门禁
-# 一致通过 ModelScope 下载模型（VLLM_USE_MODELSCOPE=True）且离线（HF_HUB_OFFLINE=1），
-# 本地无 HF 缓存，会报 LocalEntryNotFoundError，无法在容器内复现，故跳过。
+# 以及三个强制走 HuggingFace Hub 的测试：lora/test_llama32_lora.py、
+# lora/test_qwen3_multi_loras.py、test_qwen3_5_0_8b.py。它们 fixture/顶部
+# @patch VLLM_USE_MODELSCOPE=False 硬编码从 HF Hub 读取模型（如
+# jeeejeee/llama32-3b-text2sql-spider、charent/self_cognition_*、Qwen3.5-0.8B），
+# 而 devcontainer 与门禁一致通过 ModelScope 下载模型（VLLM_USE_MODELSCOPE=True）
+# 且离线（HF_HUB_OFFLINE=1），本地无 HF 缓存，会报 LocalEntryNotFoundError，
+# 无法在容器内复现，故跳过。
 A2_TESTS=()
 while IFS= read -r _t; do
   A2_TESTS+=("${_t}")
@@ -118,6 +126,8 @@ done < <(find tests/e2e/pull_request/one_card -name 'test_*.py' \
   -not -path '*/_310p/*' \
   -not -name 'test_uva.py' \
   -not -name 'test_llama32_lora.py' \
+  -not -name 'test_qwen3_multi_loras.py' \
+  -not -name 'test_qwen3_5_0_8b.py' \
   | sort)
 HF_HUB_OFFLINE=1 VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
   .github/workflows/scripts/run_selected_tests.sh a2 1 with-device "${A2_TESTS[@]}"
