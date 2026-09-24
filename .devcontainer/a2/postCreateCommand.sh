@@ -81,6 +81,7 @@ files = [
         "test_llama32_lora.py",
         "test_qwen3_multi_loras.py",
         "test_qwen3_5_0_8b.py",
+        "test_qwen3_reranker_lora.py",
     }
 ]
 # conftest.py 里定义的 session fixture（如 lora 的 *_files、test_vlm 的 vl_config）引用
@@ -112,13 +113,15 @@ PY
 # "cannot import name '_AR_RESIDUAL_RMS_NORM' ... (unknown location)"。
 # 因此与门禁一致，展开为文件列表逐个执行。同时排除 _310p 子目录（门禁中它们由
 # 310p-1 runner 单独执行，非 a2b3-1 单卡 910B）、skip_tests 里的 test_uva.py，
-# 以及三个强制走 HuggingFace Hub 的测试：lora/test_llama32_lora.py、
-# lora/test_qwen3_multi_loras.py、test_qwen3_5_0_8b.py。它们 fixture/顶部
-# @patch VLLM_USE_MODELSCOPE=False 硬编码从 HF Hub 读取模型（如
-# jeeejeee/llama32-3b-text2sql-spider、charent/self_cognition_*、Qwen3.5-0.8B），
-# 而 devcontainer 与门禁一致通过 ModelScope 下载模型（VLLM_USE_MODELSCOPE=True）
-# 且离线（HF_HUB_OFFLINE=1），本地无 HF 缓存，会报 LocalEntryNotFoundError，
-# 无法在容器内复现，故跳过。
+# 以及四个无法在容器内复现的测试：lora/test_llama32_lora.py、
+# lora/test_qwen3_multi_loras.py、test_qwen3_5_0_8b.py 三个强制走 HuggingFace Hub
+# （fixture/顶部 @patch VLLM_USE_MODELSCOPE=False 硬编码从 HF Hub 读取模型，而
+# devcontainer 与门禁一致通过 ModelScope 下载模型（VLLM_USE_MODELSCOPE=True）
+# 且离线（HF_HUB_OFFLINE=1），本地无 HF 缓存，会报 LocalEntryNotFoundError），
+# 以及 lora/test_qwen3_reranker_lora.py：该测试的 pooling runner 在 PIECEWISE
+# 图捕获阶段用满 36 档 capture size（1..256），在当前 CANN/HDK 组合下触发
+# EE1023 "Too many streams are created"、无法启动 EngineCore，属环境资源限制，
+# 不在容器内复现，故跳过。
 A2_TESTS=()
 while IFS= read -r _t; do
   A2_TESTS+=("${_t}")
@@ -128,6 +131,7 @@ done < <(find tests/e2e/pull_request/one_card -name 'test_*.py' \
   -not -name 'test_llama32_lora.py' \
   -not -name 'test_qwen3_multi_loras.py' \
   -not -name 'test_qwen3_5_0_8b.py' \
+  -not -name 'test_qwen3_reranker_lora.py' \
   | sort)
 HF_HUB_OFFLINE=1 VLLM_USE_MODELSCOPE=True VLLM_WORKER_MULTIPROC_METHOD=spawn \
   .github/workflows/scripts/run_selected_tests.sh a2 1 with-device "${A2_TESTS[@]}"
